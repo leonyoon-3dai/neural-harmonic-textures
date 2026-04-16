@@ -286,7 +286,7 @@ DeferredShaderModule(
     enable_view_encoding=True,
     view_encoding_type="sh",  # 또는 "fourier"
     sh_degree=3,              # view SH 차수
-    sh_scale=3.0,             # 방향벡터 정규화 스케일
+    sh_scale=3.0,             # 방향벡터 사전 스케일 (모듈 기본값은 1.0, 트레이너 cfg.deferred_opt_sh_scale=3.0 으로 override)
     mlp_hidden_dim=128,
     mlp_num_layers=3,         # 히든 레이어 3개 (ReLU) + Sigmoid 출력
 )
@@ -350,7 +350,7 @@ python gsplat/examples/simple_trainer_nht.py default \
 4. `DeferredShaderModule` 구성 (tcnn FullyFusedMLP).
 5. `rasterization(..., nht=True, with_eval3d=True, with_ut=True)` 호출.
 6. Loss = L1 + λ·D-SSIM (+ LPIPS 평가 시).
-7. Adam + SelectiveAdam(features) 로 역전파.
+7. 기본적으로 모든 splat 파라미터 + MLP 를 표준 `torch.optim.Adam` 으로 역전파. `--visible_adam=True` 를 주면 splat 업데이트가 `SelectiveAdam` 으로 전환되어 해당 스텝에 보인 프리미티브만 선택적으로 업데이트 (`simple_trainer_nht.py:357-363`).
 8. 일정 스텝마다 MCMC relocate/add 로 primitive 밀도 조절.
 
 ### 8.2 `scripts/eval.sh`
@@ -642,7 +642,7 @@ RGB 는 sigmoid, LSEG/DINOv3 는 linear (코사인 유사도 학습), RGB2X 는 
 | 파라미터 | 기본값 | 설명 / 물리적 의미 |
 |----------|--------|---------------------|
 | `--deferred_opt_feature_dim` | 48 | 프리미티브당 총 특징 차원 F. 4로 나뉘어 각 사면체 꼭짓점에 분배 |
-| `--deferred_features_lr` | 0.015 | 특징 학습률 (SelectiveAdam 사용) |
+| `--deferred_features_lr` | 0.015 | 특징 학습률 (기본 Adam; `--visible_adam` 플래그 시 SelectiveAdam) |
 | `--deferred_mlp_lr` | 0.00068 | Deferred MLP 학습률 (features 보다 훨씬 작음) |
 | `--deferred_mlp_hidden_dim` | 128 | MLP 히든 너비. tcnn FullyFusedMLP 제약으로 32/64/128 권장 |
 | `--deferred_mlp_num_layers` | 3 | 히든 레이어 수. 깊을수록 표현력↑, 오버헤드↑ |
@@ -666,10 +666,11 @@ RGB 는 sigmoid, LSEG/DINOv3 는 linear (코사인 유사도 학습), RGB2X 는 
 
 | 파라미터 | 기본값 | 설명 |
 |----------|--------|------|
-| `--ssim_lambda` | 0.1 | D-SSIM 가중치 (총 loss 중 10%) |
+| `--ssim_lambda` | 0.2 | D-SSIM 가중치 (총 loss 중 20%, `simple_trainer_nht.py:130`) |
 | `--tile_size` | 16 | 타일 변 길이. `F` 가 크면 8 로 낮춰 SMEM 절약 |
 | `--lpips_net` | `"vgg"` | LPIPS 백본 |
-| `--lpips_normalize` | True | VGG 입력을 `[-1,1]` 로 정규화 (NHT 논문 기본, INRIA와 다름) |
+
+> LPIPS `normalize` 는 CLI 플래그가 아니라 코드에서 항상 `True` 로 하드코딩됩니다 (`simple_trainer_nht.py:579-586`). torchmetrics 규약상 `normalize=True` 는 **입력이 `[0,1]` 범위라는 의미**이며, 모듈 내부에서 `[-1,1]` 로 옮겨 VGG/Alex 에 전달합니다 (기존 3DGS 공식 구현이 `normalize=False` 로 `[-1,1]` 입력을 가정하던 것과 대비됨).
 
 ---
 
